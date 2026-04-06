@@ -17,6 +17,7 @@ class OKXClient:
         self.logger = logging.getLogger(self.__class__.__name__)
         self.session = requests.Session()
         self.base_url = settings.okx_base_url.rstrip("/")
+        self._cached_pos_mode: Optional[str] = None
 
     def _timestamp(self) -> str:
         return datetime.now(timezone.utc).isoformat(timespec="milliseconds").replace("+00:00", "Z")
@@ -38,6 +39,35 @@ class OKXClient:
         if settings.okx_is_demo:
             headers["x-simulated-trading"] = "1"
         return headers
+
+
+    def _normalize_pos_mode(self, value: Any) -> str:
+        mode = str(value or "").strip().lower()
+        if mode in {"long_short_mode", "long_short", "hedge"}:
+            return "long_short"
+        return "net"
+
+    def _resolve_pos_mode(self, refresh: bool = False) -> str:
+        if not refresh and self._cached_pos_mode in {"net", "long_short"}:
+            return self._cached_pos_mode
+        try:
+            payload = self.get_account_config()
+            rows = payload.get("data") or []
+            row = rows[0] if rows and isinstance(rows[0], dict) else {}
+            self._cached_pos_mode = self._normalize_pos_mode(row.get("posMode"))
+        except Exception as exc:
+            self.logger.warning("failed to resolve okx pos mode, fallback to net: %s", exc)
+            self._cached_pos_mode = "net"
+        return self._cached_pos_mode
+
+    def _apply_pos_side_by_mode(self, payload: Dict[str, Any], pos_side: Optional[str]) -> Dict[str, Any]:
+        mode = self._resolve_pos_mode()
+        if mode == "long_short":
+            if pos_side:
+                payload["posSide"] = pos_side
+        else:
+            payload.pop("posSide", None)
+        return payload
 
     def _request(
         self,
@@ -213,9 +243,18 @@ class OKXClient:
             "lever": str(leverage),
             "mgnMode": margin_mode,
         }
-        if pos_side:
-            payload["posSide"] = pos_side
-        return self._request("POST", "/api/v5/account/set-leverage", params=payload, private=True)
+        payload = self._apply_pos_side_by_mode(payload, pos_side)
+        try:
+            return self._request("POST", "/api/v5/account/set-leverage", params=payload, private=True)
+        except Exception as exc:
+            business = self._extract_business_error(exc)
+            if self._is_pos_side_error(business):
+                self._resolve_pos_mode(refresh=True)
+                retry_payload = dict(payload)
+                retry_payload = self._apply_pos_side_by_mode(retry_payload, pos_side)
+                if retry_payload != payload:
+                    return self._request("POST", "/api/v5/account/set-leverage", params=retry_payload, private=True)
+            raise
 
     def place_order(
         self,
@@ -236,11 +275,20 @@ class OKXClient:
             "sz": str(size),
             "reduceOnly": "true" if reduce_only else "false",
         }
-        if pos_side:
-            payload["posSide"] = pos_side
+        payload = self._apply_pos_side_by_mode(payload, pos_side)
         if price is not None and order_type in {"limit", "post_only", "fok", "ioc"}:
             payload["px"] = str(price)
-        return self._request("POST", "/api/v5/trade/order", params=payload, private=True)
+        try:
+            return self._request("POST", "/api/v5/trade/order", params=payload, private=True)
+        except Exception as exc:
+            business = self._extract_business_error(exc)
+            if self._is_pos_side_error(business):
+                self._resolve_pos_mode(refresh=True)
+                retry_payload = dict(payload)
+                retry_payload = self._apply_pos_side_by_mode(retry_payload, pos_side)
+                if retry_payload != payload:
+                    return self._request("POST", "/api/v5/trade/order", params=retry_payload, private=True)
+            raise
 
     def place_algo_tp_sl(
         self,
@@ -259,15 +307,24 @@ class OKXClient:
             "ordType": "conditional",
             "sz": str(size),
         }
-        if pos_side:
-            payload["posSide"] = pos_side
+        payload = self._apply_pos_side_by_mode(payload, pos_side)
         if tp_trigger_px is not None:
             payload["tpTriggerPx"] = str(tp_trigger_px)
             payload["tpOrdPx"] = "-1"
         if sl_trigger_px is not None:
             payload["slTriggerPx"] = str(sl_trigger_px)
             payload["slOrdPx"] = "-1"
-        return self._request("POST", "/api/v5/trade/order-algo", params=payload, private=True)
+        try:
+            return self._request("POST", "/api/v5/trade/order-algo", params=payload, private=True)
+        except Exception as exc:
+            business = self._extract_business_error(exc)
+            if self._is_pos_side_error(business):
+                self._resolve_pos_mode(refresh=True)
+                retry_payload = dict(payload)
+                retry_payload = self._apply_pos_side_by_mode(retry_payload, pos_side)
+                if retry_payload != payload:
+                    return self._request("POST", "/api/v5/trade/order-algo", params=retry_payload, private=True)
+            raise
 
     def safe_get_balance(self) -> Dict[str, Any]:
         return self._safe(self.get_balance, {"code": "-1", "data": []})
@@ -304,6 +361,12 @@ class OKXClient:
 
     def safe_get_candles(self, inst_id: str, bar: str, limit: int) -> List[List[Any]]:
         return self._safe(self.get_candles, [], inst_id, bar, limit)
+
+    def safe_get_pos_mode(self, refresh: bool = False) -> str:
+        try:
+            return self._resolve_pos_mode(refresh=refresh)
+        except Exception:
+            return "net"
 
     def _is_pos_side_error(self, payload: Dict[str, Any] | None) -> bool:
         if not isinstance(payload, dict):
