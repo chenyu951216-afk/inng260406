@@ -38,6 +38,22 @@ class GPTAdvisorService:
                 return {}
         return {}
 
+    def _build_request_kwargs(self, instructions: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        kwargs: Dict[str, Any] = {
+            "model": settings.gpt_model,
+            "instructions": instructions,
+            "input": json.dumps(payload, ensure_ascii=False),
+            "timeout": settings.gpt_timeout_sec,
+        }
+        # Some models / endpoints reject reasoning.effort. Only send it for known reasoning-capable models.
+        model_name = str(settings.gpt_model or "").lower()
+        supports_reasoning_effort = any(
+            token in model_name for token in ("o1", "o3", "o4", "gpt-5")
+        )
+        if supports_reasoning_effort and getattr(settings, "gpt_reasoning_effort", None):
+            kwargs["reasoning"] = {"effort": settings.gpt_reasoning_effort}
+        return kwargs
+
     def _call_json(self, instructions: str, payload: Dict[str, Any], *, live: bool = False) -> Dict[str, Any]:
         if live:
             if not self.live_available():
@@ -46,13 +62,7 @@ class GPTAdvisorService:
             if not self.available():
                 return {"enabled": False, "reason": "gpt_not_configured"}
         try:
-            response = self.client.responses.create(
-                model=settings.gpt_model,
-                reasoning={"effort": settings.gpt_reasoning_effort},
-                instructions=instructions,
-                input=json.dumps(payload, ensure_ascii=False),
-                timeout=settings.gpt_timeout_sec,
-            )
+            response = self.client.responses.create(**self._build_request_kwargs(instructions, payload))
             text = getattr(response, "output_text", "")
             parsed = self._extract_json(text)
             if not parsed:
@@ -189,7 +199,6 @@ class GPTAdvisorService:
             "You are converting a live-trading discussion consensus into careful bot parameter updates. Output strict JSON only.",
             payload,
         )
-
 
     def status(self) -> Dict[str, Any]:
         return {
