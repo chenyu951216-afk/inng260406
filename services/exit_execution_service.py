@@ -212,6 +212,7 @@ class ExitExecutionService:
             price=None,
             reduce_only=True,
             margin_mode=settings.td_mode,
+            fallback_pos_side=position.get("side", ""),
         ) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-close-{position['symbol']}"}]}
         execution_snapshot = self._fetch_realized_close_snapshot(position, result, size)
         self.orders.append({
@@ -250,6 +251,7 @@ class ExitExecutionService:
             price=None,
             reduce_only=True,
             margin_mode=settings.td_mode,
+            fallback_pos_side=position.get("side", ""),
         ) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-partial-close-{position['symbol']}"}]}
 
         execution_snapshot = self._fetch_realized_close_snapshot(position, result, requested_size)
@@ -278,7 +280,7 @@ class ExitExecutionService:
         else:
             state["last_partial_close_ts"] = time.time()
             state["remaining_size"] = remaining
-            self.lifecycle.set(position["symbol"], position.get("side", ""), state)
+            self.lifecycle.update(position["symbol"], position.get("side", ""), state)
 
         return {
             "symbol": position["symbol"],
