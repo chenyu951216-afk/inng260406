@@ -114,7 +114,7 @@ class ProtectiveOrderService:
         elif tp is None and sl is None:
             result = {"code": "0", "msg": "skip_protective_no_valid_trigger", "data": []}
         else:
-            result = self.client.safe_place_algo_tp_sl(inst_id=symbol, side=algo_side, pos_side=pos_side, tp_trigger_px=tp, sl_trigger_px=sl, size=size, margin_mode=settings.td_mode) if settings.enable_live_execution and settings.enable_protective_orders else {"code": "0", "data": [{"algoId": f"paper-protect-{symbol}"}]}
+            result = self.client.safe_place_algo_tp_sl(inst_id=symbol, side=algo_side, pos_side=pos_side, tp_trigger_px=tp, sl_trigger_px=sl, size=size, margin_mode=settings.td_mode, fallback_pos_side=side) if settings.enable_live_execution and settings.enable_protective_orders else {"code": "0", "data": [{"algoId": f"paper-protect-{symbol}"}]}
 
         record = {"symbol": symbol, "mode": "live" if settings.enable_live_execution else "paper", "action": "register", "tp": tp, "sl": sl, "size": size, "result": result, "pos_side_used": pos_side, "timestamp": time.time()}
         self.lifecycle.mark_refresh(symbol, side, "register")
@@ -133,7 +133,7 @@ class ProtectiveOrderService:
         elif tp is None and sl is None:
             result = {"code": "0", "msg": "skip_protective_no_valid_trigger", "data": []}
         else:
-            result = self.client.safe_place_algo_tp_sl(inst_id=symbol, side=algo_side, pos_side=pos_side, tp_trigger_px=tp, sl_trigger_px=sl, size=normalized_size, margin_mode=settings.td_mode) if settings.enable_live_execution and settings.enable_protective_orders else {"code": "0", "data": [{"algoId": f"paper-refresh-{symbol}"}]}
+            result = self.client.safe_place_algo_tp_sl(inst_id=symbol, side=algo_side, pos_side=pos_side, tp_trigger_px=tp, sl_trigger_px=sl, size=normalized_size, margin_mode=settings.td_mode, fallback_pos_side=side) if settings.enable_live_execution and settings.enable_protective_orders else {"code": "0", "data": [{"algoId": f"paper-refresh-{symbol}"}]}
 
         record = {"symbol": symbol, "mode": "live" if settings.enable_live_execution else "paper", "action": "refresh", "reason": reason, "tp": tp, "sl": sl, "size": normalized_size, "result": result, "pos_side_used": pos_side, "timestamp": time.time()}
         self.lifecycle.mark_refresh(symbol, side, reason)
