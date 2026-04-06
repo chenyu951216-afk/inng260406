@@ -131,7 +131,7 @@ class OrderExecutionService:
 
         leverage_result = {"code": "0", "data": []}
         if settings.enable_live_execution and settings.set_leverage_before_entry:
-            leverage_result = self.client.safe_set_leverage(inst_id=candidate["symbol"], leverage=leverage, margin_mode=settings.td_mode, pos_side=pos_side)
+            leverage_result = self.client.safe_set_leverage(inst_id=candidate["symbol"], leverage=leverage, margin_mode=settings.td_mode, pos_side=pos_side, fallback_pos_side=candidate["side"])
             leverage = int(leverage_result.get("applied_leverage", leverage) or leverage)
 
         result = self.client.safe_place_order(
@@ -143,6 +143,7 @@ class OrderExecutionService:
             price=None,
             reduce_only=False,
             margin_mode=settings.td_mode,
+            fallback_pos_side=candidate["side"],
         ) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-{candidate['symbol']}"}]}
         order_success = self._result_ok(result)
 
@@ -225,7 +226,7 @@ class OrderExecutionService:
             order_side = "sell" if side == "long" else "buy"
             reduce_only = True
         pos_side = self._position_pos_side(pos_mode, side)
-        result = self.client.safe_place_order(inst_id=symbol, side=order_side, pos_side=pos_side, size=target_size, order_type="market", price=None, reduce_only=reduce_only, margin_mode=settings.td_mode) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-manage-{symbol}-{action}"}]}
+        result = self.client.safe_place_order(inst_id=symbol, side=order_side, pos_side=pos_side, size=target_size, order_type="market", price=None, reduce_only=reduce_only, margin_mode=settings.td_mode, fallback_pos_side=side) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-manage-{symbol}-{action}"}]}
         state = self.lifecycle.get(symbol, side)
         updates = {"last_action": action, "last_reason": action}
         if action == "scale_in":
