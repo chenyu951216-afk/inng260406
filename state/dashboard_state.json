@@ -1,0 +1,163 @@
+{
+  "autonomy_audit": {
+    "autonomy_ratio": 1.0,
+    "fully_autonomous_by_config": true,
+    "roles": [
+      {
+        "role": "entry_decision",
+        "owner": "ai",
+        "status": "active",
+        "description": "AI 決定進場與方向。"
+      },
+      {
+        "role": "position_sizing",
+        "owner": "ai",
+        "status": "active",
+        "description": "AI 決定倉位強度。"
+      },
+      {
+        "role": "leverage_margin",
+        "owner": "ai",
+        "status": "active",
+        "description": "AI 決定槓桿與保證金比例。"
+      },
+      {
+        "role": "protection_logic",
+        "owner": "ai",
+        "status": "active",
+        "description": "AI 決定保本、trailing、利潤保護。"
+      },
+      {
+        "role": "exit_decision",
+        "owner": "ai",
+        "status": "active",
+        "description": "AI 決定退出時機。"
+      },
+      {
+        "role": "parameter_adaptation",
+        "owner": "ai",
+        "status": "active",
+        "description": "AI 根據結果微調策略參數。"
+      },
+      {
+        "role": "safety_limits",
+        "owner": "system",
+        "status": "active",
+        "description": "系統只保留安全上限，不直接替代交易決策。"
+      }
+    ]
+  },
+  "balance": {
+    "equity": 0.0,
+    "available": 0.0,
+    "available_equity": 0.0,
+    "used_margin": 0.0,
+    "timestamp": 1775473140,
+    "credentials_ready": false,
+    "pos_mode": "net"
+  },
+  "risk_guard": {
+    "blocked": false,
+    "current_risk_pct": 0.0,
+    "reason": "risk_ok"
+  },
+  "trade_summary": {
+    "count": 0,
+    "wins": 0,
+    "losses": 0,
+    "avg_pnl": 0.0,
+    "consecutive_losses": 0,
+    "total_count": 0,
+    "closed_count": 0
+  },
+  "pnl_today": {
+    "unrealized": 0
+  },
+  "watchlist": [],
+  "positions": [],
+  "executed_orders": [],
+  "protective_orders": [],
+  "managed_positions": [],
+  "closed_sync_rows": [],
+  "ai_recent_learning_plain": "目前尚無足夠結果，AI 先沿用現有自主策略。",
+  "daily_gpt_review": {
+    "enabled": true,
+    "reason": "not_enough_trades",
+    "day": "2026-04-06",
+    "trade_count": 0,
+    "gpt_available": false
+  },
+  "adaptive_policy": {
+    "entry_confidence_shift": 0.0,
+    "size_multiplier_bias": 1.0,
+    "leverage_bias": 1.0,
+    "breakout_bias": 0.0,
+    "trend_follow_bias": 0.0,
+    "preferred_style": "balanced",
+    "entry_aggression": 0.0,
+    "breakout_tolerance": 0.0,
+    "pullback_preference": 0.0,
+    "protection_profile": "balanced",
+    "exit_style": "balanced",
+    "position_management_profile": "balanced",
+    "initial_stop_loss_atr": 1.8,
+    "initial_take_profit_atr": 3.0,
+    "break_even_trigger_rr": 1.0,
+    "trailing_activation_rr": 1.4,
+    "trailing_buffer_atr": 0.8,
+    "scale_in_aggression": 0.0,
+    "scale_out_aggression": 0.0,
+    "partial_take_profit_rr": 1.6,
+    "reentry_after_partial": 0.0,
+    "protection_refresh_bias": 0.0,
+    "break_even_lock_ratio": 0.15,
+    "trailing_step_rr": 0.45,
+    "tp1_fraction": 0.25,
+    "tp2_fraction": 0.35,
+    "protection_refresh_cooldown_sec": 120,
+    "last_reflection": "目前尚無足夠結果，AI 先沿用現有自主策略。",
+    "last_review_day": "",
+    "last_review_summary": "",
+    "last_review_consensus": {},
+    "gpt_enabled": false
+  },
+  "market_basis_ready": true,
+  "gpt_connection": {
+    "available": false,
+    "live_available": false,
+    "model": "gpt-5.4",
+    "daily_review_enabled": true,
+    "daily_review_reason": "not_enough_trades",
+    "live_control_enabled": true
+  },
+  "scan_meta": {
+    "cycle": 1,
+    "selected_symbols": [],
+    "selected_count": 0,
+    "scanned": 0,
+    "watch_count": 0,
+    "executed_count": 0,
+    "positions_count": 0,
+    "total_top_symbols": 0,
+    "bootstrap_entry_buffer": 0.1,
+    "bootstrap_max_soft_entries": 2
+  },
+  "system_notes": [
+    "初期進場條件已放寬，但只作用在交易候選，不直接放鬆學習保護。",
+    "小樣本保護、異常日保護、連敗保護、GPT 建議緩變保護仍保留。",
+    "已改為分批輪掃 top symbols，避免一次全掃造成 429。",
+    "ENABLE_LIVE_EXECUTION=True",
+    "OKX_IS_DEMO=False",
+    "KILL_SWITCH=False",
+    "posMode=net",
+    "tdMode=cross",
+    "GPT_AVAILABLE=False",
+    "GPT_MODEL=gpt-5.4",
+    "BOOTSTRAP_ENTRY_BUFFER=0.1",
+    "BOOTSTRAP_MAX_SOFT_ENTRIES=2",
+    "total_closed=0",
+    "closed_sync_rows=0",
+    "consecutive_losses=0/10",
+    "SCAN_BATCH=0/0"
+  ]
+}
