@@ -49,6 +49,20 @@ class GPTAdvisorService:
         # Alias for compatibility if older code calls another method name
         return self.advise_live(candidate, account_summary)
 
+    def status(self) -> Dict[str, Any]:
+        now = self._now_local()
+        next_run = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        if now.hour >= 0 and now.minute >= 5:
+            next_run = next_run + timedelta(days=1)
+        return {
+            "available": self.available(),
+            "live_available": False,
+            "mode": "daily_only",
+            "configured": bool(OPENAI_API_KEY),
+            "next_run_local": next_run.isoformat(),
+            "review_window": "00:00-00:05",
+        }
+
     # -----------------------------
     # Daily summary only
     # -----------------------------
@@ -120,13 +134,13 @@ class GPTAdvisorService:
                 input=[
                     {
                         "role": "system",
-                        "content": "你是交易AI優化顧問。只根據固定摘要提供精簡優化建議，禁止要求逐筆原始交易明細。"
+                        "content": "You are a trading AI optimization advisor. Use only the fixed summary. Do not request raw per-trade details."
                     },
                     {
                         "role": "user",
                         "content": (
-                            f"今日交易摘要：{summary}。"
-                            "請用精簡條列回覆：1.TP/SL優化 2.槓桿建議 3.進場過濾建議 4.風控提醒。"
+                            f"Today's trading summary: {summary}. "
+                            "Reply briefly with: 1) TP/SL optimization 2) leverage suggestion 3) entry filter suggestion 4) risk reminder."
                         ),
                     },
                 ],
