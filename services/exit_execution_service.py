@@ -203,9 +203,93 @@ class ExitExecutionService:
         side = "buy" if position["side"] == "short" else "sell"
         pos_side = self._pos_side(position.get("side", ""))
         size = max(float(position.get("size", 0.0) or 0.0), settings.lifecycle_min_position_size)
-        result = self.client.safe_place_order(inst_id=position["symbol"], side=side, pos_side=pos_side, size=size, order_type="market", price=None, reduce_only=True, margin_mode=settings.td_mode) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-close-{position['symbol']}"}]}
+        result = self.client.safe_place_order(
+            inst_id=position["symbol"],
+            side=side,
+            pos_side=pos_side,
+            size=size,
+            order_type="market",
+            price=None,
+            reduce_only=True,
+            margin_mode=settings.td_mode,
+        ) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-close-{position['symbol']}"}]}
         execution_snapshot = self._fetch_realized_close_snapshot(position, result, size)
-        self.orders.append({"symbol": position["symbol"], "exit_reason": reason, "close_result": result, "realized_pnl": execution_snapshot.get("realized_pnl", 0.0), "close_price": execution_snapshot.get("close_price", 0.0), "fill_fee": execution_snapshot.get("fill_fee", 0.0)})
+        self.orders.append({
+            "symbol": position["symbol"],
+            "exit_reason": reason,
+            "close_result": result,
+            "realized_pnl": execution_snapshot.get("realized_pnl", 0.0),
+            "close_price": execution_snapshot.get("close_price", 0.0),
+            "fill_fee": execution_snapshot.get("fill_fee", 0.0),
+        })
         self._append_trade_record(position, reason, size, "full_exit", "exit", execution_snapshot, is_full_close=True)
         self.lifecycle.clear(position["symbol"], position.get("side", ""))
-        return {"symbol": position["symbol"], "reason": reason, "execution_mode": "live" if settings.enable_live_execution else "paper", "order_result": result, "realized_pnl": execution_snapshot.get("realized_pnl", 0.0), "close_price": execution_snapshot.get("close_price", 0.0), "realized_pnl_source": execution_snapshot.get("realized_pnl_source", "unknown")}
+        return {
+            "symbol": position["symbol"],
+            "reason": reason,
+            "execution_mode": "live" if settings.enable_live_execution else "paper",
+            "order_result": result,
+            "realized_pnl": execution_snapshot.get("realized_pnl", 0.0),
+            "close_price": execution_snapshot.get("close_price", 0.0),
+            "realized_pnl_source": execution_snapshot.get("realized_pnl_source", "unknown"),
+        }
+
+    def partial_close_position(self, position: Dict[str, Any], reason: str, fraction: float) -> Dict[str, Any]:
+        original_size = max(float(position.get("size", 0.0) or 0.0), settings.lifecycle_min_position_size)
+        close_fraction = max(0.0, min(float(fraction or 0.0), 1.0))
+        requested_size = max(original_size * close_fraction, settings.lifecycle_min_position_size)
+        side = "buy" if position.get("side") == "short" else "sell"
+        pos_side = self._pos_side(position.get("side", ""))
+
+        result = self.client.safe_place_order(
+            inst_id=position["symbol"],
+            side=side,
+            pos_side=pos_side,
+            size=requested_size,
+            order_type="market",
+            price=None,
+            reduce_only=True,
+            margin_mode=settings.td_mode,
+        ) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-partial-close-{position['symbol']}"}]}
+
+        execution_snapshot = self._fetch_realized_close_snapshot(position, result, requested_size)
+        filled_size = self._safe_float(execution_snapshot.get("filled_size"), requested_size)
+
+        self.orders.append({
+            "symbol": position["symbol"],
+            "exit_reason": reason,
+            "close_result": result,
+            "realized_pnl": execution_snapshot.get("realized_pnl", 0.0),
+            "close_price": execution_snapshot.get("close_price", 0.0),
+            "fill_fee": execution_snapshot.get("fill_fee", 0.0),
+            "partial": True,
+            "requested_size": requested_size,
+            "filled_size": filled_size,
+        })
+
+        management_action = str(position.get("management_action") or "partial_exit")
+        lifecycle_stage = str(position.get("lifecycle_stage") or "partial_exit")
+        self._append_trade_record(position, reason, filled_size, management_action, lifecycle_stage, execution_snapshot, is_full_close=False)
+
+        remaining = max(original_size - filled_size, 0.0)
+        state = self.lifecycle.get(position["symbol"], position.get("side", ""))
+        if remaining <= settings.lifecycle_min_position_size:
+            self.lifecycle.clear(position["symbol"], position.get("side", ""))
+        else:
+            state["last_partial_close_ts"] = time.time()
+            state["remaining_size"] = remaining
+            self.lifecycle.set(position["symbol"], position.get("side", ""), state)
+
+        return {
+            "symbol": position["symbol"],
+            "reason": reason,
+            "execution_mode": "live" if settings.enable_live_execution else "paper",
+            "order_result": result,
+            "partial": True,
+            "requested_size": requested_size,
+            "filled_size": filled_size,
+            "remaining_size": remaining,
+            "realized_pnl": execution_snapshot.get("realized_pnl", 0.0),
+            "close_price": execution_snapshot.get("close_price", 0.0),
+            "realized_pnl_source": execution_snapshot.get("realized_pnl_source", "unknown"),
+        }
