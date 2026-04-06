@@ -1,0 +1,2 @@
+{"time": "2026-04-06 10:58:36", "step_title": "Step 40 - 試跑前收尾整合版", "change_reason": "部署版啟動修正、UI 與 API 掛載修正。", "changed_files": ["app.py"], "detail": "修正 gunicorn 下背景執行緒未啟動問題，並補 dashboard API 路徑。", "tags": ["step40", "deploy", "gunicorn", "ui", "api"]}
+{"time": "2026-04-06 10:59:00", "step_title": "Step 40 - 試跑前收尾整合版", "change_reason": "部署版啟動修正、UI 與 API 掛載修正。", "changed_files": ["app.py"], "detail": "修正 gunicorn 下背景執行緒未啟動問題，並補 dashboard API 路徑。", "tags": ["step40", "deploy", "gunicorn", "ui", "api"]}
