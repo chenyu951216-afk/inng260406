@@ -114,6 +114,7 @@ class ExitExecutionService:
         close_time = datetime.now(timezone.utc).isoformat()
         realized_pnl = self._safe_float(execution_snapshot.get("realized_pnl"), 0.0)
         realized_pnl_gross = self._safe_float(execution_snapshot.get("realized_pnl_gross", realized_pnl), realized_pnl)
+        realized_pnl_net = realized_pnl
         fee_signed = self._safe_float(execution_snapshot.get("fill_fee"), 0.0)
         fee_usdt = self._safe_float(execution_snapshot.get("fee_usdt", abs(fee_signed)), abs(fee_signed))
         pnl_ratio = self._safe_float(execution_snapshot.get("pnl_ratio"), self._safe_float(position.get("upl_ratio", position.get("uplRatio", 0.0)), 0.0))
@@ -122,7 +123,7 @@ class ExitExecutionService:
         if margin_used <= 0 and leverage > 0:
             basis = self._safe_float(execution_snapshot.get("entry_price"), self._safe_float(position.get("entry_price", 0.0), 0.0)) * max(self._safe_float(execution_snapshot.get("filled_size"), size), 0.0)
             margin_used = basis / leverage if leverage > 0 else 0.0
-        pnl_on_margin_pct = (realized_pnl / margin_used * 100.0) if margin_used > 0 else 0.0
+        pnl_on_margin_pct = (realized_pnl_net / margin_used * 100.0) if margin_used > 0 else 0.0
         entry_time = str(lifecycle_state.get("entry_time") or position.get("entry_time") or "")
         hold_seconds = 0.0
         if entry_time:
@@ -136,6 +137,7 @@ class ExitExecutionService:
                 hold_seconds = max((close_dt - entry_dt).total_seconds(), 0.0)
             except Exception:
                 hold_seconds = 0.0
+
         base_learning_tier = str(lifecycle_state.get("learning_tier") or position.get("learning_tier") or "exploration")
         margin_used_for_learning = max(self._safe_float(position.get("margin_used", lifecycle_state.get("margin_used", 0.0)), 0.0), 0.0)
         realized_abs_pnl = abs(realized_pnl_net)
@@ -147,13 +149,14 @@ class ExitExecutionService:
         )
         learning_tier = "effective" if qualifies_effective else "exploration"
         count_in_learning = learning_tier == "effective"
+
         trade_record: Dict[str, Any] = {
             "symbol": position["symbol"],
             "side": position.get("side"),
-            "pnl": realized_pnl,
-            "pnl_net": realized_pnl,
+            "pnl": realized_pnl_net,
+            "pnl_net": realized_pnl_net,
             "pnl_gross": realized_pnl_gross,
-            "pnl_amount": realized_pnl,
+            "pnl_amount": realized_pnl_net,
             "pnl_ratio": pnl_ratio,
             "pnl_on_margin_pct": round(pnl_on_margin_pct, 6),
             "margin_used": round(margin_used, 8),
@@ -206,20 +209,3 @@ class ExitExecutionService:
         self._append_trade_record(position, reason, size, "full_exit", "exit", execution_snapshot, is_full_close=True)
         self.lifecycle.clear(position["symbol"], position.get("side", ""))
         return {"symbol": position["symbol"], "reason": reason, "execution_mode": "live" if settings.enable_live_execution else "paper", "order_result": result, "realized_pnl": execution_snapshot.get("realized_pnl", 0.0), "close_price": execution_snapshot.get("close_price", 0.0), "realized_pnl_source": execution_snapshot.get("realized_pnl_source", "unknown")}
-
-    def partial_close_position(self, position: Dict[str, Any], reason: str, fraction: float) -> Dict[str, Any]:
-        fraction = min(max(float(fraction or 0.0), 0.0), 1.0)
-        total_size = max(float(position.get("size", 0.0) or 0.0), settings.lifecycle_min_position_size)
-        size = max(settings.lifecycle_min_position_size, round(total_size * fraction, 8))
-        side = "buy" if position["side"] == "short" else "sell"
-        pos_side = self._pos_side(position.get("side", ""))
-        result = self.client.safe_place_order(inst_id=position["symbol"], side=side, pos_side=pos_side, size=size, order_type="market", price=None, reduce_only=True, margin_mode=settings.td_mode) if settings.enable_live_execution else {"code": "0", "data": [{"ordId": f"paper-partial-{position['symbol']}"}]}
-        execution_snapshot = self._fetch_realized_close_snapshot(position, result, size)
-        self.orders.append({"symbol": position["symbol"], "exit_reason": reason, "partial_close_result": result, "fraction": fraction, "realized_pnl": execution_snapshot.get("realized_pnl", 0.0), "close_price": execution_snapshot.get("close_price", 0.0), "fill_fee": execution_snapshot.get("fill_fee", 0.0)})
-        self._append_trade_record(position, reason, size, position.get("management_action", "partial_exit"), position.get("review_area", "position_management"), execution_snapshot, is_full_close=False)
-        state = self.lifecycle.get(position["symbol"], position.get("side", ""))
-        updates = {"partial_exit_count": int(state.get("partial_exit_count", 0) or 0) + 1, "last_action": position.get("management_action", "partial_exit"), "last_reason": reason}
-        if position.get("management_action") == "partial_take_profit":
-            updates["tp1_done"] = True
-        self.lifecycle.update(position["symbol"], position.get("side", ""), updates)
-        return {"symbol": position["symbol"], "reason": reason, "execution_mode": "live" if settings.enable_live_execution else "paper", "fraction": fraction, "order_result": result, "realized_pnl": execution_snapshot.get("realized_pnl", 0.0), "close_price": execution_snapshot.get("close_price", 0.0), "realized_pnl_source": execution_snapshot.get("realized_pnl_source", "unknown")}
