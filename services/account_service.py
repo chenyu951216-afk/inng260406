@@ -9,6 +9,14 @@ class AccountService:
     def __init__(self) -> None:
         self.client = OKXClient()
 
+    def _normalize_pos_mode(self, value: Any) -> str:
+        raw = str(value or "").strip().lower()
+        if raw in {"net", "net_mode", "single", "single_pos_mode"}:
+            return "net"
+        if raw in {"long_short", "long_short_mode", "hedge", "buy_sell_mode"}:
+            return "long_short"
+        return "net"
+
     def credentials_ready(self) -> bool:
         return all([settings.okx_api_key, settings.okx_api_secret, settings.okx_api_passphrase])
 
@@ -53,6 +61,10 @@ class AccountService:
 
     def summary(self) -> Dict[str, Any]:
         account = self.get_account_summary()
+        config = self.client.safe_get_account_config() if self.credentials_ready() else {"code": "-1", "data": []}
+        rows = config.get("data", []) if isinstance(config, dict) else []
+        config_row = rows[0] if rows and isinstance(rows[0], dict) else {}
+        pos_mode = self._normalize_pos_mode(config_row.get("posMode"))
         return {
             "equity": float(account.get("equity", 0.0)),
             "available": float(account.get("available", 0.0)),
@@ -60,5 +72,6 @@ class AccountService:
             "used_margin": float(account.get("used_margin", 0.0)),
             "timestamp": int(time.time()),
             "credentials_ready": self.credentials_ready(),
-            "pos_mode": "net",
+            "pos_mode": pos_mode,
+            "account_pos_mode_raw": str(config_row.get("posMode", "") or ""),
         }
