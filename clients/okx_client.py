@@ -305,12 +305,31 @@ class OKXClient:
     def safe_get_candles(self, inst_id: str, bar: str, limit: int) -> List[List[Any]]:
         return self._safe(self.get_candles, [], inst_id, bar, limit)
 
+    def _is_pos_side_error(self, payload: Dict[str, Any] | None) -> bool:
+        if not isinstance(payload, dict):
+            return False
+        parts = [str(payload.get("msg", "") or "")]
+        for row in payload.get("data") or []:
+            if isinstance(row, dict):
+                parts.append(str(row.get("sMsg", "") or ""))
+        joined = " ".join(parts).lower()
+        return "posside" in joined and "error" in joined
+
+    def _logical_side_to_pos_side(self, logical_side: Any) -> Optional[str]:
+        side = str(logical_side or "").strip().lower()
+        if side in {"long", "buy"}:
+            return "long"
+        if side in {"short", "sell"}:
+            return "short"
+        return None
+
     def safe_set_leverage(
         self,
         inst_id: str,
         leverage: int,
         margin_mode: str = "cross",
         pos_side: Optional[str] = None,
+        fallback_pos_side: Optional[str] = None,
     ) -> Dict[str, Any]:
         requested = max(int(leverage or 1), 1)
         max_allowed = max(self.safe_get_max_leverage(inst_id, margin_mode, pos_side), 1)
@@ -339,6 +358,27 @@ class OKXClient:
                 scode = str(rows[0].get("sCode", "0")) if rows and isinstance(rows[0], dict) else "0"
                 if code_ok and scode in {"", "0"}:
                     return payload
+                if self._is_pos_side_error(payload):
+                    retry_pos_side = fallback_pos_side if pos_side is None else None
+                    if retry_pos_side != pos_side:
+                        retry_payload = self._safe(
+                            self.set_leverage,
+                            {"code": "-1", "data": []},
+                            inst_id,
+                            lev,
+                            margin_mode,
+                            retry_pos_side,
+                        )
+                        if isinstance(retry_payload, dict):
+                            retry_payload["requested_leverage"] = requested
+                            retry_payload["applied_leverage"] = lev
+                            retry_payload["max_allowed_leverage"] = max_allowed
+                            retry_payload["retried_pos_side"] = retry_pos_side or "net/none"
+                            retry_rows = retry_payload.get("data") or []
+                            retry_scode = str(retry_rows[0].get("sCode", "0")) if retry_rows and isinstance(retry_rows[0], dict) else "0"
+                            if str(retry_payload.get("code", "-1")) == "0" and retry_scode in {"", "0"}:
+                                return retry_payload
+                            payload = retry_payload
                 last_payload = payload
                 joined = json.dumps(payload, ensure_ascii=False)
                 if "59102" not in joined and "maximum limit" not in joined.lower():
@@ -348,7 +388,29 @@ class OKXClient:
         return last_payload or {"code": "-1", "data": [], "requested_leverage": requested, "max_allowed_leverage": max_allowed}
 
     def safe_place_order(self, **kwargs: Any) -> Dict[str, Any]:
-        return self._safe(self.place_order, {"code": "-1", "data": []}, **kwargs)
+        fallback_pos_side = kwargs.pop("fallback_pos_side", None)
+        payload = self._safe(self.place_order, {"code": "-1", "data": []}, **kwargs)
+        if self._is_pos_side_error(payload):
+            retry_kwargs = dict(kwargs)
+            current_pos_side = retry_kwargs.get("pos_side")
+            retry_kwargs["pos_side"] = fallback_pos_side if current_pos_side is None else None
+            if retry_kwargs.get("pos_side") != current_pos_side:
+                retry_payload = self._safe(self.place_order, {"code": "-1", "data": []}, **retry_kwargs)
+                if isinstance(retry_payload, dict):
+                    retry_payload["retried_pos_side"] = retry_kwargs.get("pos_side") or "net/none"
+                return retry_payload
+        return payload
 
     def safe_place_algo_tp_sl(self, **kwargs: Any) -> Dict[str, Any]:
-        return self._safe(self.place_algo_tp_sl, {"code": "-1", "data": []}, **kwargs)
+        fallback_pos_side = kwargs.pop("fallback_pos_side", None)
+        payload = self._safe(self.place_algo_tp_sl, {"code": "-1", "data": []}, **kwargs)
+        if self._is_pos_side_error(payload):
+            retry_kwargs = dict(kwargs)
+            current_pos_side = retry_kwargs.get("pos_side")
+            retry_kwargs["pos_side"] = fallback_pos_side if current_pos_side is None else None
+            if retry_kwargs.get("pos_side") != current_pos_side:
+                retry_payload = self._safe(self.place_algo_tp_sl, {"code": "-1", "data": []}, **retry_kwargs)
+                if isinstance(retry_payload, dict):
+                    retry_payload["retried_pos_side"] = retry_kwargs.get("pos_side") or "net/none"
+                return retry_payload
+        return payload
