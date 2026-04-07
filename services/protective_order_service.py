@@ -92,6 +92,50 @@ class ProtectiveOrderService:
             sl_f = None
         return tp_f, sl_f
 
+
+    def _result_ok(self, result: Dict[str, Any]) -> bool:
+        if not isinstance(result, dict):
+            return False
+        if str(result.get("code", "-1")) != "0":
+            return False
+        rows = result.get("data") or []
+        if not rows:
+            return True
+        first = rows[0] if isinstance(rows[0], dict) else {}
+        return str(first.get("sCode", "0") or "0") in {"", "0"}
+
+    def _pending_algo_matches(self, row: Dict[str, Any], symbol: str, side: str) -> bool:
+        if str(row.get("instId", "") or "") != symbol:
+            return False
+        algo_side = self._algo_side(side)
+        row_side = str(row.get("side", "") or "").lower()
+        if row_side and row_side != algo_side:
+            return False
+        row_pos_side = str(row.get("posSide", "") or "").lower()
+        expected_pos_side = side.lower()
+        if row_pos_side in {"long", "short"} and row_pos_side != expected_pos_side:
+            return False
+        return True
+
+    def _cancel_stale_symbol_algos(self, symbol: str, side: str) -> Dict[str, Any]:
+        if not settings.enable_live_execution:
+            return {"code": "0", "msg": "skip_cancel_paper_mode", "data": []}
+        payload = self.client.safe_get_pending_algo_orders("conditional")
+        rows = payload.get("data") or []
+        cancel_items = []
+        for row in rows:
+            if not isinstance(row, dict):
+                continue
+            if not self._pending_algo_matches(row, symbol, side):
+                continue
+            algo_id = str(row.get("algoId", "") or "")
+            inst_id = str(row.get("instId", "") or symbol)
+            if algo_id:
+                cancel_items.append({"instId": inst_id, "algoId": algo_id})
+        if not cancel_items:
+            return {"code": "0", "msg": "no_stale_algo_orders", "data": []}
+        return self.client.safe_cancel_algo_orders(cancel_items)
+
     def register(self, execution_record: Dict[str, Any], account_pos_mode: str) -> Dict[str, Any]:
         symbol = execution_record["symbol"]
         side = execution_record["side"]
@@ -114,9 +158,10 @@ class ProtectiveOrderService:
         elif tp is None and sl is None:
             result = {"code": "0", "msg": "skip_protective_no_valid_trigger", "data": []}
         else:
+            cancel_result = self._cancel_stale_symbol_algos(symbol, side) if settings.enable_protective_orders else {"code": "0", "msg": "skip_cancel_disabled", "data": []}
             result = self.client.safe_place_algo_tp_sl(inst_id=symbol, side=algo_side, pos_side=pos_side, tp_trigger_px=tp, sl_trigger_px=sl, size=size, margin_mode=settings.td_mode, fallback_pos_side=side) if settings.enable_live_execution and settings.enable_protective_orders else {"code": "0", "data": [{"algoId": f"paper-protect-{symbol}"}]}
 
-        record = {"symbol": symbol, "mode": "live" if settings.enable_live_execution else "paper", "action": "register", "tp": tp, "sl": sl, "size": size, "result": result, "pos_side_used": pos_side, "timestamp": time.time()}
+        record = {"symbol": symbol, "mode": "live" if settings.enable_live_execution else "paper", "action": "register", "tp": tp, "sl": sl, "size": size, "result": result, "cancel_result": cancel_result if 'cancel_result' in locals() else {"code": "0", "msg": "skip_cancel"}, "pos_side_used": pos_side, "timestamp": time.time()}
         self.lifecycle.mark_refresh(symbol, side, "register")
         self.store.append(record)
         return record
@@ -133,9 +178,23 @@ class ProtectiveOrderService:
         elif tp is None and sl is None:
             result = {"code": "0", "msg": "skip_protective_no_valid_trigger", "data": []}
         else:
+            cancel_result = self._cancel_stale_symbol_algos(symbol, side) if settings.enable_protective_orders else {"code": "0", "msg": "skip_cancel_disabled", "data": []}
             result = self.client.safe_place_algo_tp_sl(inst_id=symbol, side=algo_side, pos_side=pos_side, tp_trigger_px=tp, sl_trigger_px=sl, size=normalized_size, margin_mode=settings.td_mode, fallback_pos_side=side) if settings.enable_live_execution and settings.enable_protective_orders else {"code": "0", "data": [{"algoId": f"paper-refresh-{symbol}"}]}
 
-        record = {"symbol": symbol, "mode": "live" if settings.enable_live_execution else "paper", "action": "refresh", "reason": reason, "tp": tp, "sl": sl, "size": normalized_size, "result": result, "pos_side_used": pos_side, "timestamp": time.time()}
+        record = {"symbol": symbol, "mode": "live" if settings.enable_live_execution else "paper", "action": "refresh", "reason": reason, "tp": tp, "sl": sl, "size": normalized_size, "result": result, "cancel_result": cancel_result if 'cancel_result' in locals() else {"code": "0", "msg": "skip_cancel"}, "pos_side_used": pos_side, "timestamp": time.time()}
         self.lifecycle.mark_refresh(symbol, side, reason)
+        self.store.append(record)
+        return record
+
+    def clear_symbol_pending_algos(self, symbol: str, side: str) -> Dict[str, Any]:
+        result = self._cancel_stale_symbol_algos(symbol, side)
+        record = {
+            "symbol": symbol,
+            "mode": "live" if settings.enable_live_execution else "paper",
+            "action": "clear_pending_algos",
+            "result": result,
+            "pos_side_used": self._pos_side(side, self.client.safe_get_pos_mode()),
+            "timestamp": time.time(),
+        }
         self.store.append(record)
         return record
