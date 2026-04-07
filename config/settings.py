@@ -101,7 +101,7 @@ class Settings:
     adaptive_leverage_floor: int = int(os.getenv("ADAPTIVE_LEVERAGE_FLOOR", "3"))
     adaptive_leverage_ceiling: int = int(os.getenv("ADAPTIVE_LEVERAGE_CEILING", "100"))
 
-    lifecycle_min_position_size: float = float(os.getenv("LIFECYCLE_MIN_POSITION_SIZE", "1.0"))
+    lifecycle_min_position_size: float = float(os.getenv("LIFECYCLE_MIN_POSITION_SIZE", "0.05"))
     lifecycle_add_threshold: float = float(os.getenv("LIFECYCLE_ADD_THRESHOLD", "0.78"))
     lifecycle_reduce_threshold: float = float(os.getenv("LIFECYCLE_REDUCE_THRESHOLD", "0.32"))
     lifecycle_partial_take_profit_rr: float = float(os.getenv("LIFECYCLE_PARTIAL_TAKE_PROFIT_RR", "1.6"))
