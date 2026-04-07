@@ -11,6 +11,7 @@ from storage.order_store import OrderStore
 from storage.position_lifecycle_store import PositionLifecycleStore
 from storage.trade_store import TradeStore
 from services.dual_layer_ai_service import DualLayerAIService
+from services.protective_order_service import ProtectiveOrderService
 
 
 class ExitExecutionService:
@@ -21,6 +22,7 @@ class ExitExecutionService:
         self.policy_store = AdaptivePolicyStore()
         self.lifecycle = PositionLifecycleStore()
         self.dual_layer = DualLayerAIService()
+        self.protective = ProtectiveOrderService()
 
     def _pos_side(self, side: str) -> str | None:
         return None if side in {"", "net"} and not settings.force_pos_side_in_net_mode else ("short" if side == "short" else "long")
@@ -224,6 +226,7 @@ class ExitExecutionService:
             "fill_fee": execution_snapshot.get("fill_fee", 0.0),
         })
         self._append_trade_record(position, reason, size, "full_exit", "exit", execution_snapshot, is_full_close=True)
+        self.protective.clear_symbol_pending_algos(position["symbol"], position.get("side", ""))
         self.lifecycle.clear(position["symbol"], position.get("side", ""))
         return {
             "symbol": position["symbol"],
@@ -276,6 +279,7 @@ class ExitExecutionService:
         remaining = max(original_size - filled_size, 0.0)
         state = self.lifecycle.get(position["symbol"], position.get("side", ""))
         if remaining <= settings.lifecycle_min_position_size:
+            self.protective.clear_symbol_pending_algos(position["symbol"], position.get("side", ""))
             self.lifecycle.clear(position["symbol"], position.get("side", ""))
         else:
             state["last_partial_close_ts"] = time.time()
