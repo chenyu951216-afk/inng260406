@@ -170,6 +170,25 @@ class OKXClient:
     def get_account_config(self) -> Dict[str, Any]:
         return self._request("GET", "/api/v5/account/config", private=True)
 
+
+    def get_pending_algo_orders(self, ord_type: str = "conditional") -> Dict[str, Any]:
+        return self._request(
+            "GET",
+            "/api/v5/trade/orders-algo-pending",
+            params={"ordType": ord_type},
+            private=True,
+        )
+
+    def cancel_algo_orders(self, algo_orders: list[dict[str, Any]]) -> Dict[str, Any]:
+        if not algo_orders:
+            return {"code": "0", "data": []}
+        return self._request(
+            "POST",
+            "/api/v5/trade/cancel-algos",
+            params=algo_orders,
+            private=True,
+        )
+
     def get_max_avail_size(self, inst_id: str, td_mode: str) -> Dict[str, Any]:
         return self._request(
             "GET",
@@ -334,6 +353,13 @@ class OKXClient:
 
     def safe_get_account_config(self) -> Dict[str, Any]:
         return self._safe(self.get_account_config, {"code": "-1", "data": []})
+
+
+    def safe_get_pending_algo_orders(self, ord_type: str = "conditional") -> Dict[str, Any]:
+        return self._safe(self.get_pending_algo_orders, {"code": "-1", "data": []}, ord_type)
+
+    def safe_cancel_algo_orders(self, algo_orders: list[dict[str, Any]]) -> Dict[str, Any]:
+        return self._safe(self.cancel_algo_orders, {"code": "-1", "data": []}, algo_orders)
 
     def safe_get_max_avail_size(self, inst_id: str, td_mode: str) -> Dict[str, Any]:
         return self._safe(
